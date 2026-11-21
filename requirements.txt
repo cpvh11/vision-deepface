@@ -1,0 +1,11 @@
+# Visión por computadora
+deepface>=0.0.93
+tensorflow>=2.15
+tf-keras>=2.15
+opencv-contrib-python-headless>=4.8
+numpy>=1.26
+
+# App web local
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.5

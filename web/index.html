@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visión por computadora · DeepFace</title>
+<style>
+  :root { --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --txt:#e8eaf0; --mut:#9aa3b2;
+          --ok:#3ecf8e; --bad:#ff6b6b; --warn:#f5b748; --acc:#6c8cff; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0 12px 0 0; }
+  nav button { background:none; border:1px solid var(--line); color:var(--mut); padding:8px 14px; border-radius:8px; cursor:pointer; font:inherit; }
+  nav button.on { color:var(--txt); border-color:var(--acc); background:#1d2335; }
+  main { display:grid; grid-template-columns:minmax(320px,640px) 1fr; gap:20px; padding:20px 24px; }
+  @media (max-width:900px){ main{grid-template-columns:1fr;} }
+  .cam { position:relative; background:#000; border-radius:12px; overflow:hidden; aspect-ratio:4/3; }
+  .cam video, .cam canvas, .cam img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+  .cam .msg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--mut); padding:20px; text-align:center; }
+  .barra { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .panel h2 { margin:0 0 4px; font-size:17px; } .panel p.sub { margin:0 0 14px; color:var(--mut); font-size:13px; }
+  label { display:block; font-size:12px; color:var(--mut); margin:10px 0 4px; }
+  input, select { width:100%; background:#0f1115; border:1px solid var(--line); color:var(--txt); padding:8px 10px; border-radius:8px; font:inherit; }
+  .fila { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .btn { background:var(--acc); color:#fff; border:0; padding:9px 14px; border-radius:8px; cursor:pointer; font:inherit; font-weight:600; }
+  .btn.sec { background:#2a3040; } .btn.rojo { background:#b54848; } .btn:disabled { opacity:.5; cursor:default; }
+  .thumbs { display:flex; gap:6px; margin-top:8px; } .thumbs img { width:64px; height:48px; object-fit:cover; border-radius:6px; border:1px solid var(--line); }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+  td, th { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); } th { color:var(--mut); font-weight:500; }
+  .tag { padding:2px 8px; border-radius:20px; font-size:12px; }
+  .t-ok{background:#163a2b;color:var(--ok)} .t-bad{background:#3d1f22;color:var(--bad)} .t-warn{background:#3b3018;color:var(--warn)}
+  .log { background:#0f1115; border:1px solid var(--line); border-radius:8px; padding:10px; font:12px/1.5 ui-monospace,Menlo,monospace; max-height:260px; overflow:auto; white-space:pre-wrap; }
+  .aviso { padding:10px 12px; border-radius:8px; margin-top:10px; font-size:14px; }
+  .aviso.ok{background:#163a2b;color:var(--ok)} .aviso.bad{background:#3d1f22;color:var(--bad)} .aviso.info{background:#1d2335;color:#b8c5ff}
+  .kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px; }
+  .kpi { background:#0f1115; border:1px solid var(--line); border-radius:8px; padding:10px; } .kpi b{font-size:22px;display:block} .kpi span{font-size:12px;color:var(--mut)}
+  .vista { display:none; } .vista.on { display:block; }
+  .casa { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>👁️ Visión por computadora · DeepFace</h1>
+  <nav>
+    <button data-v="registro" class="on">0 · Registro</button>
+    <button data-v="asistencia">1 · Asistencia</button>
+    <button data-v="login">2 · Login facial</button>
+    <button data-v="hogar">3 · Hogar inteligente</button>
+  </nav>
+</header>
+
+<main>
+  <section>
+    <div class="cam">
+      <video id="video" autoplay playsinline muted></video>
+      <img id="foto" hidden>
+      <canvas id="overlay"></canvas>
+      <div class="msg" id="camMsg">Activando cámara…</div>
+    </div>
+    <div class="barra">
+      <button class="btn sec" id="btnCam">📷 Usar cámara</button>
+      <label class="btn sec" style="margin:0">🖼️ Usar foto<input type="file" id="archivo" accept="image/*" hidden></label>
+      <span id="estadoCam" style="color:var(--mut);font-size:13px"></span>
+    </div>
+  </section>
+
+  <section>
+    <!-- REGISTRO -->
+    <div class="panel vista on" id="v-registro">
+      <h2>Registrar persona</h2>
+      <p class="sub">Toma 3 capturas con distinto ángulo (o sube fotos). Cada captura debe tener un solo rostro.</p>
+      <label>Nombre completo</label><input id="rNombre" placeholder="Ana López">
+      <div class="fila">
+        <div><label>Rol (hogar)</label><select id="rRol"><option value="adulto">Adulto</option><option value="nino">Niño/a</option></select></div>
+        <div><label>Grupo (asistencia)</label><input id="rGrupo" value="General"></div>
+      </div>
+      <label>Contacto para avisos (padre / supervisor)</label><input id="rContacto" placeholder="correo o teléfono">
+      <div class="fila">
+        <div><label>Música favorita</label><input id="rMusica" placeholder="opcional"></div>
+        <div><label>Temperatura ideal °C</label><input id="rTemp" type="number" placeholder="opcional"></div>
+      </div>
+      <div class="barra"><button class="btn sec" id="rCapturar">📸 Capturar (0/3)</button><button class="btn sec" id="rLimpiar">Limpiar</button></div>
+      <div class="thumbs" id="rThumbs"></div>
+      <div class="barra"><button class="btn" id="rGuardar">Registrar</button></div>
+      <div id="rAviso"></div>
+      <h2 style="margin-top:20px">Personas registradas</h2>
+      <table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Grupo</th><th></th></tr></thead><tbody id="rTabla"></tbody></table>
+    </div>
+
+    <!-- ASISTENCIA -->
+    <div class="panel vista" id="v-asistencia">
+      <h2>Proyecto 1 · Asistencia automatizada</h2>
+      <p class="sub">La cámara reconoce a todos los rostros del cuadro y registra la asistencia una vez por día.</p>
+      <div class="fila">
+        <div><label>Filtrar grupo</label><input id="aGrupo" placeholder="todos"></div>
+        <div style="display:flex;align-items:end;gap:8px"><button class="btn" id="aIniciar">▶ Iniciar</button><button class="btn sec" id="aCerrar">Cerrar día</button></div>
+      </div>
+      <div class="kpis"><div class="kpi"><b id="kPres">0</b><span>Presentes</span></div><div class="kpi"><b id="kAus">0</b><span>Ausentes</span></div><div class="kpi"><b id="kPct">0%</b><span>Asistencia</span></div></div>
+      <table><thead><tr><th>Nombre</th><th>Grupo</th><th>Hora</th><th>Estado</th></tr></thead><tbody id="aTabla"></tbody></table>
+      <div id="aAviso"></div>
+    </div>
+
+    <!-- LOGIN -->
+    <div class="panel vista" id="v-login">
+      <div id="lForm">
+        <h2>Proyecto 2 · Inicio de sesión con tu rostro</h2>
+        <p class="sub">Sin contraseña. Se toman 3 capturas y las 3 deben coincidir con el usuario (umbral estricto). 3 fallos = bloqueo de 5 min.</p>
+        <label>Usuario</label><input id="lUsuario" placeholder="ana-lopez">
+        <div class="barra"><button class="btn" id="lEntrar">🔐 Verificar rostro</button></div>
+        <div id="lAviso"></div>
+      </div>
+      <div id="lPanel" hidden>
+        <h2 id="lHola"></h2>
+        <p class="sub">Área privada. Sesión válida por 30 minutos.</p>
+        <div class="aviso ok">✔ Identidad verificada biométricamente</div>
+        <label>Últimos accesos de esta cuenta</label><div class="log" id="lHist"></div>
+        <div class="barra"><button class="btn rojo" id="lSalir">Cerrar sesión</button></div>
+      </div>
+    </div>
+
+    <!-- HOGAR -->
+    <div class="panel vista" id="v-hogar">
+      <h2>Proyecto 3 · Hogar inteligente</h2>
+      <p class="sub">Reconoce quién llega y adapta luces, música, temperatura y TV. Desconocidos activan alerta de seguridad.</p>
+      <div class="barra"><button class="btn" id="hIniciar">▶ Iniciar</button></div>
+      <div class="casa" id="hCasa"></div>
+      <label>Bitácora de la casa</label><div class="log" id="hLog">Esperando…</div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const video = $("video"), foto = $("foto"), ov = $("overlay"), ctx = ov.getContext("2d");
+let vista = "registro", fuente = "cam", stream = null, bucle = null, ocupado = false, token = null, capturas = [];
+
+// ---------------- cámara / fuente de imagen ----------------
+async function iniciarCam() {
+  try {
+    stream = stream || await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    video.srcObject = stream; fuente = "cam"; foto.hidden = true; video.hidden = false; $("camMsg").hidden = true;
+  } catch (e) {
+    $("camMsg").textContent = "No se pudo abrir la cámara. Usa «Usar foto» para probar con imágenes."; $("camMsg").hidden = false;
+  }
+}
+$("btnCam").onclick = iniciarCam;
+$("archivo").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { foto.src = r.result; foto.hidden = false; video.hidden = true; fuente = "foto"; $("camMsg").hidden = true; limpiarCajas(); };
+  r.readAsDataURL(f); e.target.value = "";
+};
+function cuadro() {
+  const el = fuente === "cam" ? video : foto;
+  const w = fuente === "cam" ? video.videoWidth : foto.naturalWidth, h = fuente === "cam" ? video.videoHeight : foto.naturalHeight;
+  if (!w) return null;
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  c.getContext("2d").drawImage(el, 0, 0, w, h);
+  return { data: c.toDataURL("image/jpeg", 0.85), w, h };
+}
+function limpiarCajas() { ctx.clearRect(0, 0, ov.width, ov.height); }
+function dibujar(rostros, w, h) {
+  ov.width = w; ov.height = h; limpiarCajas();
+  ctx.lineWidth = Math.max(2, w / 250); ctx.font = `${Math.max(14, w / 35)}px system-ui`;
+  for (const r of rostros) {
+    const ok = !!r.id, c = r.caja, color = ok ? "#3ecf8e" : "#ff6b6b";
+    ctx.strokeStyle = color; ctx.strokeRect(c.x, c.y, c.w, c.h);
+    const txt = (r.nombre || "Desconocido") + (r.emocion ? " · " + r.emocion : "") + (r.estado && r.estado !== "desconocido" ? " · " + r.estado : "");
+    const tw = ctx.measureText(txt).width + 10;
+    ctx.fillStyle = color; ctx.fillRect(c.x, c.y - parseInt(ctx.font) - 8, tw, parseInt(ctx.font) + 8);
+    ctx.fillStyle = "#000"; ctx.fillText(txt, c.x + 5, c.y - 6);
+  }
+}
+async function api(url, body, metodo) {
+  const r = await fetch(url, { method: metodo || (body ? "POST" : "GET"), headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || "Error " + r.status);
+  return j;
+}
+const aviso = (id, tipo, txt) => $(id).innerHTML = `<div class="aviso ${tipo}">${txt}</div>`;
+
+// ---------------- navegación ----------------
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  detener(); vista = b.dataset.v; limpiarCajas();
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".vista").forEach(v => v.classList.toggle("on", v.id === "v-" + vista));
+  if (vista === "registro") cargarPersonas();
+  if (vista === "asistencia") cargarResumen();
+});
+function detener() { clearInterval(bucle); bucle = null; $("aIniciar").textContent = "▶ Iniciar"; $("hIniciar").textContent = "▶ Iniciar"; $("estadoCam").textContent = ""; }
+function alternar(boton, fn) {
+  if (bucle) return detener();
+  boton.textContent = "⏸ Detener"; $("estadoCam").textContent = "● analizando";
+  const paso = async () => { if (ocupado) return; ocupado = true; try { await fn(); } catch (e) { $("estadoCam").textContent = e.message; } ocupado = false; };
+  paso(); bucle = setInterval(paso, fuente === "foto" ? 4000 : 1200);
+}
+
+// ---------------- registro ----------------
+$("rCapturar").onclick = () => {
+  if (capturas.length >= 5) return; const c = cuadro(); if (!c) return;
+  capturas.push(c.data); $("rThumbs").innerHTML = capturas.map(s => `<img src="${s}">`).join("");
+  $("rCapturar").textContent = `📸 Capturar (${capturas.length}/3)`;
+};
+$("rLimpiar").onclick = () => { capturas = []; $("rThumbs").innerHTML = ""; $("rCapturar").textContent = "📸 Capturar (0/3)"; };
+$("rGuardar").onclick = async () => {
+  if (!capturas.length) return aviso("rAviso", "bad", "Toma al menos una captura.");
+  $("rGuardar").disabled = true; aviso("rAviso", "info", "Procesando rostros…");
+  try {
+    const prefs = {}; if ($("rMusica").value) prefs.musica = $("rMusica").value; if ($("rTemp").value) prefs.temperatura = +$("rTemp").value;
+    const p = await api("/api/personas", { nombre: $("rNombre").value, rol: $("rRol").value, grupo: $("rGrupo").value,
+      contacto: $("rContacto").value, preferencias: prefs, fotos: capturas });
+    aviso("rAviso", "ok", `✔ ${p.nombre} registrado/a. Usuario para login: <b>${p.id}</b>`);
+    $("rLimpiar").onclick(); $("rNombre").value = ""; cargarPersonas();
+  } catch (e) { aviso("rAviso", "bad", "✖ " + e.message); }
+  $("rGuardar").disabled = false;
+};
+async function cargarPersonas() {
+  const ps = await api("/api/personas");
+  $("rTabla").innerHTML = ps.map(p => `<tr><td>${p.id}</td><td>${p.nombre}</td><td>${p.rol === "nino" ? "Niño/a" : "Adulto"}</td><td>${p.grupo}</td>
+    <td><button class="btn sec" style="padding:3px 8px" onclick="borrar('${p.id}')">✕</button></td></tr>`).join("") || `<tr><td colspan=5 style="color:var(--mut)">Aún no hay personas.</td></tr>`;
+}
+async function borrar(id) { if (confirm("¿Eliminar a " + id + "?")) { await api("/api/personas/" + id, null, "DELETE"); cargarPersonas(); } }
+
+// ---------------- asistencia ----------------
+$("aIniciar").onclick = () => alternar($("aIniciar"), async () => {
+  const c = cuadro(); if (!c) return;
+  const r = await api("/api/asistencia/cuadro", { imagen: c.data });
+  dibujar(r.rostros, c.w, c.h); if (r.nuevos.length) cargarResumen();
+});
+async function cargarResumen() {
+  const g = encodeURIComponent($("aGrupo").value.trim());
+  const r = await api("/api/asistencia/resumen?grupo=" + g); pintarResumen(r);
+}
+function pintarResumen(r) {
+  $("kPres").textContent = r.presentes.length; $("kAus").textContent = r.ausentes.length; $("kPct").textContent = r.porcentaje + "%";
+  $("aTabla").innerHTML = r.presentes.map(p => `<tr><td>${p.nombre}</td><td>${p.grupo}</td><td>${p.hora}</td><td><span class="tag ${p.estado === "puntual" ? "t-ok" : "t-warn"}">${p.estado}</span></td></tr>`).join("")
+    + r.ausentes.map(p => `<tr><td>${p.nombre}</td><td>${p.grupo}</td><td>—</td><td><span class="tag t-bad">ausente</span></td></tr>`).join("");
+}
+$("aGrupo").onchange = cargarResumen;
+$("aCerrar").onclick = async () => {
+  detener(); const r = await api("/api/asistencia/cerrar?grupo=" + encodeURIComponent($("aGrupo").value.trim()), {});
+  pintarResumen(r);
+  aviso("aAviso", r.notificaciones.length ? "info" : "ok", r.notificaciones.length
+    ? "📨 Notificaciones enviadas (simulado):<br>" + r.notificaciones.map(n => `→ ${n.para}: ${n.mensaje}`).join("<br>")
+    : "✔ Asistencia completa, no hay ausencias que notificar.");
+};
+
+// ---------------- login ----------------
+const pausa = ms => new Promise(r => setTimeout(r, ms));
+$("lEntrar").onclick = async () => {
+  const u = $("lUsuario").value.trim(); if (!u) return aviso("lAviso", "bad", "Escribe tu usuario.");
+  $("lEntrar").disabled = true; const fotos = [];
+  for (let i = 1; i <= 3; i++) { aviso("lAviso", "info", `Mira a la cámara… captura ${i}/3`); const c = cuadro(); if (c) fotos.push(c.data); await pausa(500); }
+  aviso("lAviso", "info", "Verificando identidad…");
+  try {
+    const r = await api("/api/login", { usuario: u, fotos });
+    if (r.ok) { token = r.token; abrirPanel(); }
+    else aviso("lAviso", "bad", "✖ " + r.motivo + (r.detalle ? "<br><small>" + r.detalle.map(d => `captura ${d.captura}: ${d.ok ? "✔" : "✖"} ${d.distancia ?? ""} ${d.motivo || ""}`).join(" · ") + "</small>" : ""));
+  } catch (e) { aviso("lAviso", "bad", "✖ " + e.message); }
+  $("lEntrar").disabled = false;
+};
+async function abrirPanel() {
+  const s = await api("/api/sesion/" + token);
+  $("lForm").hidden = true; $("lPanel").hidden = false; $("lAviso").innerHTML = "";
+  $("lHola").textContent = "Hola, " + s.nombre + " 👋"; $("lHist").textContent = s.historial.join("\n");
+}
+$("lSalir").onclick = async () => { await api("/api/logout/" + token, {}); token = null; $("lPanel").hidden = true; $("lForm").hidden = false; };
+
+// ---------------- hogar ----------------
+$("hIniciar").onclick = () => alternar($("hIniciar"), async () => {
+  const c = cuadro(); if (!c) return;
+  const r = await api("/api/hogar/cuadro", { imagen: c.data });
+  dibujar(r.rostros, c.w, c.h);
+  const e = r.casa, icon = { luz: "💡", musica: "🎵", temperatura: "🌡️", tv: "📺", seguridad: "🛡️", modo: "🏠" };
+  $("hCasa").innerHTML = Object.entries(e).map(([k, v]) => `<div class="kpi"><span>${icon[k] || ""} ${k}</span><b style="font-size:15px;color:${v === "ALERTA" ? "var(--bad)" : "inherit"}">${v}${k === "temperatura" ? " °C" : ""}</b></div>`).join("");
+  if (r.bitacora.length) $("hLog").textContent = r.bitacora.slice().reverse().join("\n");
+});
+
+iniciarCam(); cargarPersonas();
+</script>
+</body>
+</html>
